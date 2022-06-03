@@ -74,4 +74,11 @@
 /// The layer and the extra window will be destroyed automatically after the animation completes.
 - (void)setFrame:(NSRect)frameRect withDuration:(CFTimeInterval)duration timing:(CAMediaTimingFunction *)timing;
 
+/// Provides a completion block after animations are performed
+- (void)setFrame:(NSRect)frameRect withDuration:(CFTimeInterval)duration timing:(CAMediaTimingFunction *)timing completion:(void(^)(void))completionBlock;
+
+/// Provides an animation block to execute additional animations to the window layer
+/// Provides a completion block after animations are performed
+- (void)setFrame:(NSRect)frameRect withDuration:(CFTimeInterval)duration timing:(CAMediaTimingFunction *)timing animations:(void (^)(CALayer *layer))animations completion:(void(^)(void))completionBlock;
+
 @end

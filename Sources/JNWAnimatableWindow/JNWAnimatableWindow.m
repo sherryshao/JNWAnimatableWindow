@@ -260,7 +260,7 @@ CGContextRef JNWCreateGraphicsContext(CGSize size, CGColorSpaceRef colorSpace) {
 	
 	// The fake window is in the exact same position as the real one, so we can safely order ourself out.
 	[super orderOut:nil];
-	[self performAnimations:animations withDuration:duration timing:timing];
+	[self performAnimations:animations withDuration:duration timing:timing completion:nil];
 }
 
 - (void)orderOutWithAnimation:(CAAnimation *)animation {
@@ -279,7 +279,7 @@ CGContextRef JNWCreateGraphicsContext(CGSize size, CGColorSpaceRef colorSpace) {
 	if (!self.isVisible)
 		[super makeKeyAndOrderFront:nil];
 	
-	[self performAnimations:animations withDuration:duration timing:timing];
+    [self performAnimations:animations withDuration:duration timing:timing completion:nil];
 }
 
 - (void)makeKeyAndOrderFrontWithAnimation:(CAAnimation *)animation initialOpacity:(CGFloat)opacity {
@@ -294,29 +294,43 @@ CGContextRef JNWCreateGraphicsContext(CGSize size, CGColorSpaceRef colorSpace) {
 }
 
 - (void)setFrame:(NSRect)frameRect withDuration:(CFTimeInterval)duration timing:(CAMediaTimingFunction *)timing {
-	[self setupIfNeeded];
-	
-	[super setFrame:frameRect display:YES animate:NO];
-	
-	// We need to explicitly animate the shadow path to reflect the new size.
-	CGPathRef shadowPath = CGPathCreateWithRect(self.shadowRect, NULL);
-	CABasicAnimation *animation = [CABasicAnimation animationWithKeyPath:@"shadowPath"];
-	animation.fromValue = (id)self.windowRepresentationLayer.shadowPath;
-	animation.toValue = (__bridge id)(shadowPath);
-	animation.duration = duration;
-	animation.timingFunction = timing?:[CAMediaTimingFunction functionWithName:JNWAnimatableWindowDefaultAnimationCurve];
-	[self.windowRepresentationLayer addAnimation:animation forKey:@"shadowPath"];
-	self.windowRepresentationLayer.shadowPath = shadowPath;
-	CGPathRelease(shadowPath);
-	
-	NSImage *finalState = [self imageRepresentationOffscreen:YES];
-	[self performAnimations:^(CALayer *layer) {
-		self.windowRepresentationLayer.frame = [self convertWindowFrameToScreenFrame:frameRect];
-		self.windowRepresentationLayer.contents = finalState;
-	} withDuration:duration timing:timing];
+    [self setFrame:frameRect withDuration:duration timing:timing animations:nil completion:nil];
 }
 
-- (void)performAnimations:(void (^)(CALayer *layer))animations withDuration:(CFTimeInterval)duration timing:(CAMediaTimingFunction *)timing {
+- (void)setFrame:(NSRect)frameRect withDuration:(CFTimeInterval)duration timing:(CAMediaTimingFunction *)timing completion:(void(^)(void))completionBlock {
+    [self setFrame:frameRect withDuration:duration timing:timing animations:nil completion:completionBlock];
+}
+
+- (void)setFrame:(NSRect)frameRect withDuration:(CFTimeInterval)duration timing:(CAMediaTimingFunction *)timing animations:(void (^)(CALayer *layer))animations completion:(void(^)(void))completionBlock {
+    [self setupIfNeeded];
+
+    // We need to explicitly animate the shadow path to reflect the new size.
+    CGPathRef shadowPath = CGPathCreateWithRect(self.shadowRect, NULL);
+    CABasicAnimation *animation = [CABasicAnimation animationWithKeyPath:@"shadowPath"];
+    animation.fromValue = (id)self.windowRepresentationLayer.shadowPath;
+    animation.toValue = (__bridge id)(shadowPath);
+    animation.duration = duration;
+    animation.timingFunction = timing?:[CAMediaTimingFunction functionWithName:JNWAnimatableWindowDefaultAnimationCurve];
+    [self.windowRepresentationLayer addAnimation:animation forKey:@"shadowPath"];
+    self.windowRepresentationLayer.shadowPath = shadowPath;
+    CGPathRelease(shadowPath);
+
+    NSImage *finalState = [self imageRepresentationOffscreen:YES];
+    [self performAnimations:^(CALayer *layer) {
+        if (animations != nil) {
+            animations(layer);
+        }
+        self.windowRepresentationLayer.frame = [self convertWindowFrameToScreenFrame:frameRect];
+        self.windowRepresentationLayer.contents = finalState;
+    } withDuration:duration timing:timing completion:^{
+        [self setFrame:frameRect display:YES animate:NO];
+        if (completionBlock != nil) {
+            completionBlock();
+        }
+    }];
+}
+
+- (void)performAnimations:(void (^)(CALayer *layer))animations withDuration:(CFTimeInterval)duration timing:(CAMediaTimingFunction *)timing completion:(void(^)(void))completionBlock {
 	[NSAnimationContext beginGrouping];
 	
 	[CATransaction begin];
@@ -324,6 +338,9 @@ CGContextRef JNWCreateGraphicsContext(CGSize size, CGColorSpaceRef colorSpace) {
 	[CATransaction setAnimationTimingFunction:timing?:[CAMediaTimingFunction functionWithName:JNWAnimatableWindowDefaultAnimationCurve]];
 	[CATransaction setCompletionBlock:^{
 		[self destroyTransformingWindowIfNeeded];
+        if (completionBlock != nil) {
+            completionBlock();
+        }
 	}];
 	
 	animations(self.windowRepresentationLayer);
